@@ -47,8 +47,13 @@ AVRPlayer::AVRPlayer()
 	if (TempMeshRight.Succeeded())
 	{
 		MeshRight->SetSkeletalMesh(TempMeshRight.Object);
-		MeshRight->SetWorldLocationAndRotation(FVector(-2.981260f, -3.5f, 4.561753f), FRotator(-25, 0, 90));
+		MeshRight->SetWorldLocationAndRotation(FVector(-2.981260f, 3.5f, 4.561753f), FRotator(25, 0, 90));
 	}
+
+	// 써클을 생성하고 충돌처리가 되지 않게 처리하고 싶다.
+	TeleportCircle = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TeleportCircle"));
+	TeleportCircle->SetupAttachment(RootComponent);
+	TeleportCircle->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AVRPlayer::BeginPlay()
@@ -68,12 +73,39 @@ void AVRPlayer::BeginPlay()
 			subsystem->AddMappingContext(IMC_VRPlayer, 0);
 		}
 	}
+	ResetTeleport();
 }
 
 void AVRPlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// 만약 버튼이 눌러졌다면
+	if (true == bTeleporting)
+	{
+		FVector start = MeshRight->GetComponentLocation();
+		FVector end = start + MeshRight->GetRightVector() * 100000;
+
+		// 선 그리기
+		DrawLine(start, end);
+
+		// LineTrace를 해서 부딪힌 곳이 있다면
+		// HitTest(시작점, 끝점, &부딪힌 정보)
+		FHitResult hitInfo;
+		bool bHit = HitTest(start, end, hitInfo);
+		if (bHit)
+		{
+			// 그곳에 써클을 보이게 하고 배치하고 싶다.
+			TeleportCircle->SetWorldLocation(hitInfo.Location);
+			TeleportCircle->SetVisibility(true);
+		}
+		// 그렇지 않다면
+		else
+		{
+			// 써클을 보이지 않게 하고 싶다.
+			TeleportCircle->SetVisibility(false);
+		}
+	}
 }
 
 void AVRPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -85,6 +117,13 @@ void AVRPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	if (input)
 	{
 		input->BindAction(IA_Move, ETriggerEvent::Triggered, this, &AVRPlayer::OnIAMove);
+		input->BindAction(IA_Turn, ETriggerEvent::Triggered, this, &AVRPlayer::OnIATurn);
+
+		// 텔레포트 입력을 등록하고 싶다.
+		// 눌렀을 때 ONIATeleportStart
+		input->BindAction(IA_Teleport, ETriggerEvent::Started, this, &AVRPlayer::ONIATeleportStart);
+		// 뗏을 때 ONIATeleportEnd
+		input->BindAction(IA_Teleport, ETriggerEvent::Completed, this, &AVRPlayer::ONIATeleportEnd);
 	}
 }
 
@@ -92,6 +131,44 @@ void AVRPlayer::OnIAMove(const FInputActionValue& value)
 {
 	FVector2D v = value.Get<FVector2D>();
 
-	AddMovementInput(GetActorForwardVector(), v.X);
-	AddMovementInput(GetActorRightVector(), v.Y);
+	AddMovementInput(GetActorForwardVector(), v.Y);
+	AddMovementInput(GetActorRightVector(), v.X);
+}
+
+void AVRPlayer::OnIATurn(const FInputActionValue& value)
+{
+	float v = value.Get<float>();
+	AddControllerYawInput(v);
+}
+
+void AVRPlayer::ONIATeleportStart(const FInputActionValue& value)
+{
+	// 누르면 써클이 보이고
+	bTeleporting = true;
+}
+
+void AVRPlayer::ONIATeleportEnd(const FInputActionValue& value)
+{
+	// 떼면 안보이게 하고 싶다.
+	ResetTeleport();
+}
+
+void AVRPlayer::DrawLine(const FVector& start, const FVector& end)
+{
+	DrawDebugLine(GetWorld(), start, end, FColor::Red, false, -1, 0, 1);
+}
+
+bool AVRPlayer::HitTest(FVector start, FVector end, FHitResult& OuthitInfo)
+{
+	FCollisionQueryParams params;
+	params.AddIgnoredActor(this);
+	return GetWorld()->LineTraceSingleByChannel(OuthitInfo, start, end, ECC_Visibility, params);
+}
+
+void AVRPlayer::ResetTeleport()
+{
+	// 써클 보이지 않게
+	// 텔레포트중이 아님
+	TeleportCircle->SetVisibility(false);
+	bTeleporting = false;
 }

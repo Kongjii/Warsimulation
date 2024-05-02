@@ -7,6 +7,8 @@
 #include <../../../../../../../Plugins/EnhancedInput/Source/EnhancedInput/Public/InputActionValue.h>
 #include "VRPlayer.generated.h"
 
+struct FInputActionValue;
+
 UCLASS()
 class WARSIMULATION_API AVRPlayer : public ACharacter
 {
@@ -52,4 +54,30 @@ public:
 
 	// Move 생성
 	void OnIAMove(const FInputActionValue& value);
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_Turn;
+
+	// 마우스 좌우 생성
+	void OnIATurn(const FInputActionValue& value);
+
+	// 텔레포트 처리를 위해서 써클을 표현하고 싶다.
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UStaticMeshComponent* TeleportCircle;
+
+	// 텔레포트중인가? 여부를 기억하고 싶다.
+	bool bTeleporting;
+
+	// 입력처리와 그에 해당하는 함수를 구현하고 싶다.
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_Teleport;
+
+	// Teleport 생성
+	void ONIATeleportStart(const FInputActionValue& value);
+	void ONIATeleportEnd(const FInputActionValue& value);
+
+	void DrawLine(const FVector& start, const FVector& end);
+private:
+	bool HitTest(FVector start, FVector end, FHitResult& OuthitInfo);
+	void ResetTeleport();
 };
