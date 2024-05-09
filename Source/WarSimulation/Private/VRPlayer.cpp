@@ -10,6 +10,9 @@
 #include <Components/CapsuleComponent.h>
 #include <../../../../../../../Plugins/FX/Niagara/Source/Niagara/Public/NiagaraComponent.h>
 #include <../../../../../../../Plugins/FX/Niagara/Source/Niagara/Classes/NiagaraDataInterfaceArrayFunctionLibrary.h>
+#include <../../../../../../../Source/Runtime/Engine/Classes/Kismet/GameplayStatics.h>
+#include <../../../../../../../Source/Runtime/Engine/Classes/Kismet/KismetMathLibrary.h>
+#include <../../../../../../../Plugins/Runtime/XRBase/Source/XRBase/Public/HeadMountedDisplayFunctionLibrary.h>
 
 AVRPlayer::AVRPlayer()
 {
@@ -52,6 +55,10 @@ AVRPlayer::AVRPlayer()
 
 	TeleportTraceVFX = CreateDefaultSubobject<UNiagaraComponent>(TEXT("TeleportTraceVFX"));
 	TeleportCircleVFX->SetupAttachment(RootComponent);
+
+	RightAim = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("RightAim"));
+	RightAim->SetupAttachment(RootComponent);
+	RightAim->SetTrackingMotionSource(TEXT("RightAim"));
 }
 
 void AVRPlayer::BeginPlay()
@@ -68,11 +75,17 @@ void AVRPlayer::BeginPlay()
 		}
 	}
 	ResetTeleport();
+
+	Crosshair = GetWorld()->SpawnActor<AActor>(CrosshairFactory);
 }
 
 void AVRPlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	DrawCrosshair();
+
+	TickGripCalc();
 
 	if (true == bTeleporting)
 	{
@@ -104,6 +117,13 @@ void AVRPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 
 		input->BindAction(IA_Teleport, ETriggerEvent::Started, this, &AVRPlayer::ONIATeleportStart);
 		input->BindAction(IA_Teleport, ETriggerEvent::Completed, this, &AVRPlayer::ONIATeleportEnd);
+
+		input->BindAction(IA_Fire, ETriggerEvent::Started, this, &AVRPlayer::OnIAFire);
+
+		input->BindAction(IA_Grip, ETriggerEvent::Started, this, &AVRPlayer::OnIAGrip);
+		input->BindAction(IA_Grip, ETriggerEvent::Completed, this, &AVRPlayer::OnIAUnGrip);
+
+		input->BindAction(IA_ViewReset, ETriggerEvent::Started, this, &AVRPlayer::OnIAViewReset);
 	}
 }
 
@@ -152,6 +172,9 @@ bool AVRPlayer::HitTest(FVector start, FVector end, FHitResult& OuthitInfo)
 {
 	FCollisionQueryParams params;
 	params.AddIgnoredActor(this);
+	params.AddIgnoredComponent(MeshLeft);
+	params.AddIgnoredComponent(MeshRight);
+
 	return GetWorld()->LineTraceSingleByChannel(OuthitInfo, start, end, ECC_Visibility, params);
 }
 
@@ -271,4 +294,160 @@ void AVRPlayer::DoWarp()
 				GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			}
 	}, 0.033333f, true);
+}
+
+void AVRPlayer::OnIAFire(const FInputActionValue& value)
+{
+	FHitResult hitInfo;
+	FVector start = RightAim->GetComponentLocation();
+	FVector end = start + RightAim->GetForwardVector() * 100000;
+	FCollisionQueryParams params;
+	params.AddIgnoredActor(this);
+	params.AddIgnoredComponent(MeshRight);
+
+	bool bHit = GetWorld()->LineTraceSingleByChannel(hitInfo, start, end, ECC_Visibility, params);
+	if ( bHit )
+	{
+		auto* hitComp = hitInfo.GetComponent();
+		if (hitComp && hitComp->IsSimulatingPhysics())
+		{
+			FVector direction = (end - start).GetSafeNormal();
+			FVector force = direction * 1000 * hitComp->GetMass();
+			hitComp->AddImpulseAtLocation(force, hitInfo.ImpactPoint);
+
+			UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), FireVFX, hitInfo.ImpactPoint);
+		}
+	}
+	else
+	{
+		// 허공
+	}
+}
+
+void AVRPlayer::DrawCrosshair()
+{
+	FVector start = RightAim->GetComponentLocation();
+	FVector end = start + RightAim->GetForwardVector() * 100000;
+	FHitResult hitInfo;
+	bool bHit = HitTest(start, end, hitInfo);
+	float distance = 1;
+	if (bHit)
+	{
+		Crosshair->SetActorLocation(hitInfo.ImpactPoint);
+		DrawDebugLine(GetWorld(), start, hitInfo.ImpactPoint, FColor::Red, false, 0);
+		distance = kAdjustCrosshairScale * hitInfo.Distance / 100;
+	}
+	else
+	{
+		Crosshair->SetActorLocation(end);
+		DrawDebugLine(GetWorld(), start, end, FColor::Red, false, 0);
+		distance = kAdjustCrosshairScale * FVector::Dist(start, end) / 100;
+	}
+
+	Crosshair->SetActorScale3D(FVector(distance));
+
+	FVector dir = Crosshair->GetActorLocation() - VRCamera->GetComponentLocation();
+	Crosshair->SetActorRotation(UKismetMathLibrary::MakeRotFromX(dir.GetSafeNormal()));
+}
+
+void AVRPlayer::OnIAGrip(const FInputActionValue& value)
+{
+	TArray<FOverlapResult> hits;
+	FVector origin = MotionRight->GetComponentLocation();
+	FQuat rot = FQuat::Identity;
+	FCollisionQueryParams params;
+	params.AddIgnoredActor(this);
+	params.AddIgnoredComponent(MeshLeft);
+	params.AddIgnoredComponent(MeshRight);
+
+	bool bHits = GetWorld()->OverlapMultiByObjectType(hits, origin, rot, ECC_PhysicsBody, FCollisionShape::MakeSphere(GripRadius), params);
+
+	if (bHits)
+	{
+ 		bGrip = true;
+// 		int32 index = -1;
+// 		float dist = 999999999;
+// 		for (int i = 0; i < hits.Num(); i++)
+// 		{
+// 			auto* temp = hits[i].GetComponent();
+// 			float tempDist = FVector::Dist(origin, temp->GetComponentLocation());
+// 			if (dist > tempDist)
+// 			{
+// 				dist = tempDist;
+// 				index = i;
+// 			}
+// 		}
+// 		GripObject = hits[index].GetComponent();
+
+		hits.Sort([&](const FOverlapResult a, const FOverlapResult b) {
+			float distA = FVector::Dist(origin, a.GetComponent()->GetComponentLocation());
+			float distB = FVector::Dist(origin, b.GetComponent()->GetComponentLocation());
+			return distA < distB;
+		});
+
+		GripObject = hits[0].GetComponent();
+
+		GripObject->SetSimulatePhysics(false);
+		GripObject->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		GripObject->AttachToComponent(MeshRight, FAttachmentTransformRules::KeepWorldTransform);
+
+		GripObject->IgnoreComponentWhenMoving(GetCapsuleComponent(), true);
+	}
+}
+
+void AVRPlayer::OnIAUnGrip(const FInputActionValue& value)
+{
+	if ( false == bGrip || nullptr == GripObject )
+		return;
+	GripObject->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+
+	GripObject->SetSimulatePhysics(true);
+	GripObject->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GripObject->IgnoreComponentWhenMoving(GetCapsuleComponent(), false);
+
+	DoThrowObject();
+
+	GripObject = nullptr;
+	bGrip = false;
+}
+
+void AVRPlayer::TickGripCalc()
+{
+	ThrowDirection = MeshRight->GetComponentLocation() - PrevLocation;
+
+	deltaAngle = MeshRight->GetComponentQuat() * PrevRotation.Inverse();
+
+	PrevLocation = MeshRight->GetComponentLocation();
+	PrevRotation = MeshRight->GetComponentQuat();
+}
+
+void AVRPlayer::DoThrowObject()
+{
+	if (GripObject)
+	{
+		GripObject->AddForce(ThrowDirection.GetSafeNormal() * GripObject->GetMass() * ThrowPower);
+
+		FVector axis;
+		float angle;
+		deltaAngle.ToAxisAndAngle(axis, angle);
+		float dt = GetWorld()->GetDeltaSeconds();
+
+		// 각속도 : angle(radian) / dt * axis
+		FVector angularVelocity = angle / dt * axis;
+		GripObject->SetPhysicsAngularVelocityInRadians(angularVelocity, true);
+	}
+}
+
+void AVRPlayer::OnIAViewReset(const FInputActionValue& value)
+{
+	UHeadMountedDisplayFunctionLibrary::SetTrackingOrigin(EHMDTrackingOrigin::Floor);
+	if (UHeadMountedDisplayFunctionLibrary::IsHeadMountedDisplayEnabled())
+	{
+		auto* pc = Cast<APlayerController>(Controller);
+		auto conRot = pc->GetControlRotation();
+		conRot.Yaw = 0;
+		pc->SetControlRotation(conRot);
+		UHeadMountedDisplayFunctionLibrary::ResetOrientationAndPosition(conRot.Yaw);
+	}
 }

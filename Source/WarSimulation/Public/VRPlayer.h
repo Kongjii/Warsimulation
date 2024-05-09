@@ -99,4 +99,58 @@ public:
 	float WarpTime = 0.2f;
 
 	void DoWarp();
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UMotionControllerComponent* RightAim;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_Fire;
+
+	void OnIAFire(const FInputActionValue& value);
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+
+	class UParticleSystem* FireVFX;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	TSubclassOf<AActor> CrosshairFactory;
+
+	UPROPERTY()
+	AActor* Crosshair;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	float kAdjustCrosshairScale = 0.1f;
+
+	void DrawCrosshair();
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_Grip;
+
+	void OnIAGrip(const FInputActionValue& value);
+	void OnIAUnGrip(const FInputActionValue& value);
+
+	bool bGrip;
+
+	UPROPERTY()
+	class UPrimitiveComponent* GripObject;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	float GripRadius = 100;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	float ThrowPower = 50000;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	float torquePower = 500;
+
+	FVector ThrowDirection;
+	FVector PrevLocation;
+	FQuat PrevRotation;
+	FQuat deltaAngle;
+
+	void TickGripCalc();
+	void DoThrowObject();
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_ViewReset;
+	void OnIAViewReset(const FInputActionValue& value);
 };
