@@ -13,6 +13,7 @@
 #include <../../../../../../../Source/Runtime/Engine/Classes/Kismet/GameplayStatics.h>
 #include <../../../../../../../Source/Runtime/Engine/Classes/Kismet/KismetMathLibrary.h>
 #include <../../../../../../../Plugins/Runtime/XRBase/Source/XRBase/Public/HeadMountedDisplayFunctionLibrary.h>
+#include <../../../../../../../Source/Runtime/Engine/Classes/Haptics/HapticFeedbackEffect_Curve.h>
 
 AVRPlayer::AVRPlayer()
 {
@@ -123,7 +124,13 @@ void AVRPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		input->BindAction(IA_Grip, ETriggerEvent::Started, this, &AVRPlayer::OnIAGrip);
 		input->BindAction(IA_Grip, ETriggerEvent::Completed, this, &AVRPlayer::OnIAUnGrip);
 
+		input->BindAction(IA_GripLeft, ETriggerEvent::Started, this, &AVRPlayer::OnIAGripLeft);
+		input->BindAction(IA_GripLeft, ETriggerEvent::Completed, this, &AVRPlayer::OnIAUnGripLeft);
+
 		input->BindAction(IA_ViewReset, ETriggerEvent::Started, this, &AVRPlayer::OnIAViewReset);
+
+		input->BindAction(IA_RemoteGrip, ETriggerEvent::Started, this, &AVRPlayer::OnIARemoteGrip);
+		input->BindAction(IA_RemoteGrip, ETriggerEvent::Completed, this, &AVRPlayer::OnIARemoteUnGrip);
 	}
 }
 
@@ -298,6 +305,12 @@ void AVRPlayer::DoWarp()
 
 void AVRPlayer::OnIAFire(const FInputActionValue& value)
 {
+	auto* pc = Cast<APlayerController>(Controller);
+	if (pc)
+	{
+		pc->PlayHapticEffect(HapticFire, EControllerHand::Right);
+	}
+
 	FHitResult hitInfo;
 	FVector start = RightAim->GetComponentLocation();
 	FVector end = start + RightAim->GetForwardVector() * 100000;
@@ -352,40 +365,16 @@ void AVRPlayer::DrawCrosshair()
 
 void AVRPlayer::OnIAGrip(const FInputActionValue& value)
 {
-	TArray<FOverlapResult> hits;
-	FVector origin = MotionRight->GetComponentLocation();
-	FQuat rot = FQuat::Identity;
-	FCollisionQueryParams params;
-	params.AddIgnoredActor(this);
-	params.AddIgnoredComponent(MeshLeft);
-	params.AddIgnoredComponent(MeshRight);
+	FOverlapResult hitObject = DoGrip(MeshRight);
 
-	bool bHits = GetWorld()->OverlapMultiByObjectType(hits, origin, rot, ECC_PhysicsBody, FCollisionShape::MakeSphere(GripRadius), params);
-
-	if (bHits)
+// 		hits.Sort([&](const FOverlapResult a, const FOverlapResult b) {
+// 			float distA = FVector::Dist(origin, a.GetComponent()->GetComponentLocation());
+// 			float distB = FVector::Dist(origin, b.GetComponent()->GetComponentLocation());
+// 			return distA < distB;
+// 		});
+	if (nullptr != hitObject.GetActor())
 	{
- 		bGrip = true;
-// 		int32 index = -1;
-// 		float dist = 999999999;
-// 		for (int i = 0; i < hits.Num(); i++)
-// 		{
-// 			auto* temp = hits[i].GetComponent();
-// 			float tempDist = FVector::Dist(origin, temp->GetComponentLocation());
-// 			if (dist > tempDist)
-// 			{
-// 				dist = tempDist;
-// 				index = i;
-// 			}
-// 		}
-// 		GripObject = hits[index].GetComponent();
-
-		hits.Sort([&](const FOverlapResult a, const FOverlapResult b) {
-			float distA = FVector::Dist(origin, a.GetComponent()->GetComponentLocation());
-			float distB = FVector::Dist(origin, b.GetComponent()->GetComponentLocation());
-			return distA < distB;
-		});
-
-		GripObject = hits[0].GetComponent();
+		GripObject = hitObject.GetComponent();
 
 		GripObject->SetSimulatePhysics(false);
 		GripObject->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -398,44 +387,48 @@ void AVRPlayer::OnIAGrip(const FInputActionValue& value)
 
 void AVRPlayer::OnIAUnGrip(const FInputActionValue& value)
 {
-	if ( false == bGrip || nullptr == GripObject )
+	if ( nullptr == GripObject )
 		return;
-	GripObject->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
 
-	GripObject->SetSimulatePhysics(true);
-	GripObject->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	GripObject->IgnoreComponentWhenMoving(GetCapsuleComponent(), false);
-
-	DoThrowObject();
+	DoUnGrip(MeshRight, GripObject, deltaAngle);
 
 	GripObject = nullptr;
-	bGrip = false;
 }
 
 void AVRPlayer::TickGripCalc()
 {
+	// 오른손
 	ThrowDirection = MeshRight->GetComponentLocation() - PrevLocation;
 
 	deltaAngle = MeshRight->GetComponentQuat() * PrevRotation.Inverse();
 
 	PrevLocation = MeshRight->GetComponentLocation();
 	PrevRotation = MeshRight->GetComponentQuat();
+
+	// ======================
+	// 왼손
+	ThrowDirectionLeft = MeshLeft->GetComponentLocation() - PrevLocationLeft;
+
+	deltaAngleLeft = MeshLeft->GetComponentQuat() * PrevRotationLeft.Inverse();
+
+	PrevLocationLeft = MeshLeft->GetComponentLocation();
+	PrevRotationLeft = MeshLeft->GetComponentQuat();
 }
 
-void AVRPlayer::DoThrowObject()
+void AVRPlayer::DoThrowObject(class UPrimitiveComponent* obj, const FQuat& _deltaAngle)
 {
-	if (GripObject)
+	if ( obj )
 	{
-		GripObject->AddForce(ThrowDirection.GetSafeNormal() * GripObject->GetMass() * ThrowPower);
+		obj->AddForce(ThrowDirection.GetSafeNormal() * obj->GetMass() * ThrowPower);
 
 		FVector axis;
 		float angle;
-		deltaAngle.ToAxisAndAngle(axis, angle);
+		_deltaAngle.ToAxisAndAngle(axis, angle);
 		float dt = GetWorld()->GetDeltaSeconds();
 
 		// 각속도 : angle(radian) / dt * axis
 		FVector angularVelocity = angle / dt * axis;
-		GripObject->SetPhysicsAngularVelocityInRadians(angularVelocity, true);
+		obj->SetPhysicsAngularVelocityInRadians(angularVelocity, true);
 	}
 }
 
@@ -450,4 +443,122 @@ void AVRPlayer::OnIAViewReset(const FInputActionValue& value)
 		pc->SetControlRotation(conRot);
 		UHeadMountedDisplayFunctionLibrary::ResetOrientationAndPosition(conRot.Yaw);
 	}
+}
+
+void AVRPlayer::OnIARemoteGrip(const FInputActionValue& value)
+{
+	if ( GripObject )
+		return;
+
+	FHitResult hitInfo;
+	FVector start = MeshRight->GetComponentLocation();
+	FVector end = start + MeshRight->GetRightVector() * 100000;
+	FCollisionQueryParams params;
+	params.AddIgnoredActor(this);
+	params.AddIgnoredComponent(MeshRight);
+	params.AddIgnoredComponent(MeshLeft);
+
+	bool bHit = GetWorld()->SweepSingleByObjectType(hitInfo, start, end, FQuat::Identity, ECC_PhysicsBody, FCollisionShape::MakeSphere(20), params);
+	if (bHit && hitInfo.GetComponent()->IsSimulatingPhysics())
+	{
+		GripObject = hitInfo.GetComponent();
+
+		GripObject->SetSimulatePhysics(false);
+		GripObject->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		GripObject->AttachToComponent(MeshRight, FAttachmentTransformRules::KeepWorldTransform);
+
+		GripObject->IgnoreComponentWhenMoving(GetCapsuleComponent(), true);
+	}
+
+	float dt = 1.f / 60.f;
+
+	if (GripObject)
+	{
+		GetWorldTimerManager().SetTimer(RemoteGripTimerHandle, [&, dt]() {
+			FVector p = GripObject->GetComponentLocation();
+			FVector target = MeshRight->GetComponentLocation();
+			p = FMath::Lerp(p, target, GetWorld()->GetDeltaSeconds() * 6);
+			GripObject->SetWorldLocation(p);
+
+			if (FVector::Dist(p, target) < 10)
+			{
+				GripObject->SetWorldLocation(target);
+				GetWorldTimerManager().ClearTimer(RemoteGripTimerHandle);
+			}
+		}, dt, true);
+	}
+}
+
+void AVRPlayer::OnIARemoteUnGrip(const FInputActionValue& value)
+{
+	GetWorldTimerManager().ClearTimer(RemoteGripTimerHandle);
+	OnIAUnGrip(value);
+}
+
+void AVRPlayer::OnIAGripLeft(const FInputActionValue& value)
+{
+	FOverlapResult hitObject = DoGrip(MeshLeft);
+
+	if (nullptr != hitObject.GetComponent())
+	{
+		GripObjectLeft = hitObject.GetComponent();
+
+		GripObjectLeft->SetSimulatePhysics(false);
+		GripObjectLeft->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+		GripObjectLeft->AttachToComponent(MeshLeft, FAttachmentTransformRules::KeepWorldTransform);
+
+		GripObjectLeft->IgnoreComponentWhenMoving(GetCapsuleComponent(), true);
+	}
+}
+
+void AVRPlayer::OnIAUnGripLeft(const FInputActionValue& value)
+{
+	if ( nullptr == GripObjectLeft )
+		return;
+	DoUnGrip(MeshLeft, GripObjectLeft, deltaAngleLeft);
+
+	GripObjectLeft = nullptr;
+}
+
+struct FOverlapResult AVRPlayer::DoGrip(class USkeletalMeshComponent* hand)
+{
+	TArray<FOverlapResult> hits;
+	FVector origin = hand->GetComponentLocation();
+	FQuat rot = FQuat::Identity;
+	FCollisionQueryParams params;
+	params.AddIgnoredActor(this);
+	params.AddIgnoredComponent(MeshLeft);
+	params.AddIgnoredComponent(MeshRight);
+
+	bool bHits = GetWorld()->OverlapMultiByObjectType(hits, origin, rot, ECC_PhysicsBody, FCollisionShape::MakeSphere(GripRadius), params);
+
+	if ( bHits )
+	{
+		int32 index = -1;
+		float dist = 999999999;
+		for (int i = 0; i < hits.Num(); i++)
+		{
+			auto* temp = hits[i].GetComponent();
+			float tempDist = FVector::Dist(origin, temp->GetComponentLocation());
+			if (dist > tempDist)
+			{
+				dist = tempDist;
+				index = i;
+			}
+		}
+		return hits[index];
+	}
+	return FOverlapResult();
+}
+
+void AVRPlayer::DoUnGrip(class USkeletalMeshComponent* hand, UPrimitiveComponent* obj, const FQuat _deltaAngle)
+{
+	obj->DetachFromComponent(FDetachmentTransformRules::KeepWorldTransform);
+
+	obj->SetSimulatePhysics(true);
+	obj->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	
+	DoThrowObject(obj, _deltaAngle);
 }

@@ -123,15 +123,53 @@ public:
 	void DrawCrosshair();
 
 	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_ViewReset;
+	void OnIAViewReset(const FInputActionValue& value);
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_RemoteGrip;
+
+	void OnIARemoteGrip(const FInputActionValue& value);
+	void OnIARemoteUnGrip(const FInputActionValue& value);
+
+	FTimerHandle RemoteGripTimerHandle;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UHapticFeedbackEffect_Curve* HapticFire;
+
+	// 오른손
+	UPROPERTY(EditDefaultsOnly, Category = VR)
 	class UInputAction* IA_Grip;
 
 	void OnIAGrip(const FInputActionValue& value);
 	void OnIAUnGrip(const FInputActionValue& value);
 
-	bool bGrip;
-
 	UPROPERTY()
 	class UPrimitiveComponent* GripObject;
+
+	FVector ThrowDirection;
+	FVector PrevLocation;
+	FQuat PrevRotation;
+	FQuat deltaAngle;
+
+	// 왼손
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UPrimitiveComponent* GripObjectLeft;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_GripLeft;
+
+	void OnIAGripLeft(const FInputActionValue& value);
+	void OnIAUnGripLeft(const FInputActionValue& value);
+
+	FVector ThrowDirectionLeft;
+	FVector PrevLocationLeft;
+	FQuat PrevRotationLeft;
+	FQuat deltaAngleLeft;
+
+	// 양손
+	struct FOverlapResult DoGrip(class USkeletalMeshComponent* hand);
+	void DoUnGrip(class USkeletalMeshComponent* hand, UPrimitiveComponent* obj, const FQuat _deltaAngle);
 
 	UPROPERTY(EditDefaultsOnly, Category = VR)
 	float GripRadius = 100;
@@ -142,15 +180,6 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = VR)
 	float torquePower = 500;
 
-	FVector ThrowDirection;
-	FVector PrevLocation;
-	FQuat PrevRotation;
-	FQuat deltaAngle;
-
 	void TickGripCalc();
-	void DoThrowObject();
-
-	UPROPERTY(EditDefaultsOnly, Category = VR)
-	class UInputAction* IA_ViewReset;
-	void OnIAViewReset(const FInputActionValue& value);
+	void DoThrowObject(class UPrimitiveComponent* obj, const FQuat& _deltaAngle);
 };
