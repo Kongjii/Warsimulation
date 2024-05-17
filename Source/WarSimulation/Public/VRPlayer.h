@@ -167,6 +167,14 @@ public:
 	FQuat PrevRotationLeft;
 	FQuat deltaAngleLeft;
 
+	UPROPERTY()
+	class AGunActor* GunActor;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UInputAction* IA_LeftFire;
+
+	void OnIALeftFire(const FInputActionValue& value);
+
 	// ¾ç¼Õ
 	struct FOverlapResult DoGrip(class USkeletalMeshComponent* hand);
 	void DoUnGrip(class USkeletalMeshComponent* hand, UPrimitiveComponent* obj, const FQuat _deltaAngle);
