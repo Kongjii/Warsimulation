@@ -40,6 +40,10 @@
 				"Linux",
 				"Android"
 			]
+		},
+		{
+			"Name": "ModelingToolsEditorMode",
+			"Enabled": true
 		}
 	],
 	"TargetPlatforms": [
