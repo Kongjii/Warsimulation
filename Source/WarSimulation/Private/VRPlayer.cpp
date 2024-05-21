@@ -15,6 +15,9 @@
 #include <../../../../../../../Plugins/Runtime/XRBase/Source/XRBase/Public/HeadMountedDisplayFunctionLibrary.h>
 #include <../../../../../../../Source/Runtime/Engine/Classes/Haptics/HapticFeedbackEffect_Curve.h>
 #include "GunActor.h"
+#include "Enemy.h"
+#include "Grenade.h"
+#include <../../../../../../../Source/Runtime/UMG/Public/Components/WidgetInteractionComponent.h>
 
 AVRPlayer::AVRPlayer()
 {
@@ -61,6 +64,9 @@ AVRPlayer::AVRPlayer()
 	RightAim = CreateDefaultSubobject<UMotionControllerComponent>(TEXT("RightAim"));
 	RightAim->SetupAttachment(RootComponent);
 	RightAim->SetTrackingMotionSource(TEXT("RightAim"));
+
+	Interation = CreateDefaultSubobject<UWidgetInteractionComponent>(TEXT("Interaction"));
+	Interation->SetupAttachment(RightAim);
 }
 
 void AVRPlayer::BeginPlay()
@@ -88,6 +94,9 @@ void AVRPlayer::Tick(float DeltaTime)
 	DrawCrosshair();
 
 	TickGripCalc();
+
+	if (GripObject)
+		GripObject->SetRelativeLocationAndRotation(FVector(3.2f, 25.0f, -2.0f), FRotator(0.0f, 90.0f, 270.0f));
 
 	if (true == bTeleporting)
 	{
@@ -121,6 +130,8 @@ void AVRPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		input->BindAction(IA_Teleport, ETriggerEvent::Completed, this, &AVRPlayer::ONIATeleportEnd);
 
 		input->BindAction(IA_Fire, ETriggerEvent::Started, this, &AVRPlayer::OnIAFire);
+		input->BindAction(IA_Fire, ETriggerEvent::Completed, this, &AVRPlayer::OnIAReleasePointer);
+
 		input->BindAction(IA_LeftFire, ETriggerEvent::Started, this, &AVRPlayer::OnIALeftFire);
 
 		input->BindAction(IA_Grip, ETriggerEvent::Started, this, &AVRPlayer::OnIAGrip);
@@ -307,6 +318,11 @@ void AVRPlayer::DoWarp()
 
 void AVRPlayer::OnIAFire(const FInputActionValue& value)
 {
+	if (Interation)
+	{
+		Interation->PressPointerKey(EKeys::LeftMouseButton);
+	}
+
 	auto* pc = Cast<APlayerController>(Controller);
 	if (pc)
 	{
@@ -324,13 +340,33 @@ void AVRPlayer::OnIAFire(const FInputActionValue& value)
 	if ( bHit )
 	{
 		auto* hitComp = hitInfo.GetComponent();
+// 		if ( hitComp )
+// 		{
+// 			hitComp->GetName().Contains(TEXT("center"));
+// 			UE_LOG(LogTemp, Warning, TEXT("true"));
+// 		}
 		if (hitComp && hitComp->IsSimulatingPhysics())
 		{
 			FVector direction = (end - start).GetSafeNormal();
 			FVector force = direction * 1000 * hitComp->GetMass();
 			hitComp->AddImpulseAtLocation(force, hitInfo.ImpactPoint);
 		}
-
+		if (hitInfo.GetActor()->IsA<AEnemy>())
+		{
+			auto* enemy = Cast<AEnemy>(hitInfo.GetActor());
+			if (enemy)
+			{
+				enemy->OnMyTakeDamage(1);
+				UE_LOG(LogTemp, Warning, TEXT("111111111"));
+			}
+			else{
+				UE_LOG(LogTemp, Warning, TEXT("sedrfgjklshdghgfwe"));
+			}
+			
+		}
+		else {
+			UE_LOG(LogTemp, Warning, TEXT("33333333333"));
+		}
 		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), FireVFX, hitInfo.ImpactPoint);
 	}
 	else
@@ -431,6 +467,21 @@ void AVRPlayer::DoThrowObject(class UPrimitiveComponent* obj, const FQuat& _delt
 		// 각속도 : angle(radian) / dt * axis
 		FVector angularVelocity = angle / dt * axis;
 		obj->SetPhysicsAngularVelocityInRadians(angularVelocity, true);
+
+		auto* grenade = Cast<AGrenade>(obj->GetOwner());
+		if (grenade)
+		{
+			// 수류탄의 Play를 호출하고 싶다.
+			grenade->Play();
+		}
+	}
+}
+
+void AVRPlayer::OnIAReleasePointer(const FInputActionValue& value)
+{
+	if (Interation)
+	{
+		Interation->ReleasePointerKey(EKeys::LeftMouseButton);
 	}
 }
 
@@ -455,6 +506,7 @@ void AVRPlayer::OnIARemoteGrip(const FInputActionValue& value)
 	FHitResult hitInfo;
 	FVector start = MeshRight->GetComponentLocation();
 	FVector end = start + MeshRight->GetRightVector() * 100000;
+	
 	FCollisionQueryParams params;
 	params.AddIgnoredActor(this);
 	params.AddIgnoredComponent(MeshRight);
@@ -471,25 +523,27 @@ void AVRPlayer::OnIARemoteGrip(const FInputActionValue& value)
 		GripObject->AttachToComponent(MeshRight, FAttachmentTransformRules::KeepWorldTransform);
 
 		GripObject->IgnoreComponentWhenMoving(GetCapsuleComponent(), true);
+
+		GripObject->SetRelativeLocationAndRotation(FVector(70.0f, 0.0f, 30.0f), FRotator(0.0f, 90.0f, 270.0f));
 	}
 
 	float dt = 1.f / 60.f;
 
-	if (GripObject)
-	{
-		GetWorldTimerManager().SetTimer(RemoteGripTimerHandle, [&, dt]() {
-			FVector p = GripObject->GetComponentLocation();
-			FVector target = MeshRight->GetComponentLocation();
-			p = FMath::Lerp(p, target, GetWorld()->GetDeltaSeconds() * 6);
-			GripObject->SetWorldLocation(p);
-
-			if (FVector::Dist(p, target) < 10)
-			{
-				GripObject->SetWorldLocation(target);
-				GetWorldTimerManager().ClearTimer(RemoteGripTimerHandle);
-			}
-		}, dt, true);
-	}
+// 	if (GripObject)
+// 	{
+// 		GetWorldTimerManager().SetTimer(RemoteGripTimerHandle, [&, dt]() {
+// 			FVector p = GripObject->GetComponentLocation();
+// 			FVector target = MeshRight->GetComponentLocation();
+// 			p = FMath::Lerp(p, target, GetWorld()->GetDeltaSeconds() * 6);
+// 			GripObject->SetWorldLocation(p);
+// 
+// 			if (FVector::Dist(p, target) < 10)
+// 			{
+// 				GripObject->SetWorldLocation(target);
+// 				GetWorldTimerManager().ClearTimer(RemoteGripTimerHandle);
+// 			}
+// 		}, dt, true);
+// 	}
 }
 
 void AVRPlayer::OnIARemoteUnGrip(const FInputActionValue& value)

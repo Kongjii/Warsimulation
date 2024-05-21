@@ -190,4 +190,9 @@ public:
 
 	void TickGripCalc();
 	void DoThrowObject(class UPrimitiveComponent* obj, const FQuat& _deltaAngle);
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UWidgetInteractionComponent* Interation;
+
+	void OnIAReleasePointer(const FInputActionValue& value);
 };
