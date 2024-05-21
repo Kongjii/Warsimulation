@@ -8,6 +8,8 @@
 #include "EnemyHPWidget.h"
 #include "Components/WidgetComponent.h"
 #include <../../../../../../../Source/Runtime/Engine/Classes/Kismet/KismetMathLibrary.h>
+#include <../../../../../../../Source/Runtime/Engine/Classes/Components/CapsuleComponent.h>
+#include <../../../../../../../Source/Runtime/Engine/Classes/GameFramework/CharacterMovementComponent.h>
 
 AEnemy::AEnemy()
 {
@@ -15,6 +17,12 @@ AEnemy::AEnemy()
 
 	EnemyHPComp = CreateDefaultSubobject<UWidgetComponent>(TEXT("EnemyHPComp"));
 	EnemyHPComp->SetupAttachment(RootComponent);
+
+	Base = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Base"));
+	Base->SetupAttachment(RootComponent);
+
+	Center = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Center"));
+	Center->SetupAttachment(RootComponent);
 }
 
 void AEnemy::BeginPlay()
@@ -97,42 +105,51 @@ void AEnemy::TickDie()
 	this->Destroy();
 }
 
-void AEnemy::OnMyTakeDamage(int32 damage)
+void AEnemy::OnMyTakeDamage(int32 damage, UPrimitiveComponent* hitComp)
 {
 	if (bDie)
 		return;
 
-	HP1 -= damage;
-	if (HP1 <= 0)
+	if (hitComp == Base)
 	{
-		HP2 = 0;
-		FTimerHandle handle;
-		GetWorld()->GetTimerManager().SetTimer(handle, [&]() {
-			Destroy();
-			}, 1, false);
+		HP1 -= damage;
+		if (HP1 <= 0)
+		{
+			HP1 = 0;
+			FTimerHandle handle;
+			GetWorld()->GetTimerManager().SetTimer(handle, [&]() {
+				Destroy();
+				}, 1, false);
+		}
+		EnemyHP->UpdateInfo(HP1, BaseMaxHP);
 	}
-	if (bDie)
-		return;
+	else if (hitComp == Center)
+	{
+		HP2 -= damage;
+		if (HP2 <= 0)
+		{
+			HP2 = 0;
+			FTimerHandle handle;
+			GetWorld()->GetTimerManager().SetTimer(handle, [&]() {
+				Destroy();
+				}, 1, false);
+		}
+		EnemyHP->UpdateInfo(HP2, CenterMaxHP);
+	}
 
-	HP2 -= damage;
-	if (HP2 <= 0)
-	{
-		HP2 = 0;
-		FTimerHandle handle;
-		GetWorld()->GetTimerManager().SetTimer(handle, [&]() {
-			Destroy();
-			}, 1, false);
-	}
-	UE_LOG(LogTemp, Warning, TEXT("Error"));
-	EnemyHP->UpdateInfo(HP1, BaseMaxHP);
-	EnemyHP->UpdateInfo(HP2, CenterMaxHP);
 }
 
-void AEnemy::OnMyTakeDamageWithFlying(FVector origin, float upward, UPrimitiveComponent* comp)
+void AEnemy::OnMyTakeDamageWithFlying(FVector origin, float upward, FOverlapResult& hitInfo)
 {
 	State = EEnemyState::Flying;
 
 	AI->StopMovement();
+
+	auto enemy = Cast<AEnemy>(hitInfo.GetActor());
+	enemy->GetCharacterMovement()->GravityScale = 1;
+	auto comp = enemy->GetCapsuleComponent();
+
+	comp->SetCollisionProfileName("Pawn");
 
 	comp->SetSimulatePhysics(true);
 

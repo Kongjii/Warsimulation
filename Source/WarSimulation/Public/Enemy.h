@@ -52,8 +52,8 @@ public:
 
 	bool bDie;
 
-	void OnMyTakeDamage(int32 damage);
-	void OnMyTakeDamageWithFlying(FVector origin, float upward, UPrimitiveComponent* comp);
+	void OnMyTakeDamage(int32 damage, UPrimitiveComponent* hitComp);
+	void OnMyTakeDamageWithFlying(FVector origin, float upward, FOverlapResult& hitInfo);
 
 	UPROPERTY(EditDefaultsOnly, Category = VR)
 	class UWidgetComponent* EnemyHPComp;
@@ -68,4 +68,10 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, Category = VR)
 	float FlyingTime = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UStaticMeshComponent* Base;
+
+	UPROPERTY(EditDefaultsOnly, Category = VR)
+	class UStaticMeshComponent* Center;
 };

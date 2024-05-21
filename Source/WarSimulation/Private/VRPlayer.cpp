@@ -351,22 +351,13 @@ void AVRPlayer::OnIAFire(const FInputActionValue& value)
 			FVector force = direction * 1000 * hitComp->GetMass();
 			hitComp->AddImpulseAtLocation(force, hitInfo.ImpactPoint);
 		}
-		if (hitInfo.GetActor()->IsA<AEnemy>())
+
+		auto* enemy = Cast<AEnemy>(hitInfo.GetActor());
+		if (enemy)
 		{
-			auto* enemy = Cast<AEnemy>(hitInfo.GetActor());
-			if (enemy)
-			{
-				enemy->OnMyTakeDamage(1);
-				UE_LOG(LogTemp, Warning, TEXT("111111111"));
-			}
-			else{
-				UE_LOG(LogTemp, Warning, TEXT("sedrfgjklshdghgfwe"));
-			}
-			
+			enemy->OnMyTakeDamage(1, hitComp);
 		}
-		else {
-			UE_LOG(LogTemp, Warning, TEXT("33333333333"));
-		}
+
 		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), FireVFX, hitInfo.ImpactPoint);
 	}
 	else

@@ -48,7 +48,7 @@ void AGrenade::Play()
 			auto* enemy = Cast<AEnemy>(hits[i].GetActor());
 			if (enemy)
 			{
-				enemy->OnMyTakeDamageWithFlying(origin, 1000, hits[i].GetComponent());
+				enemy->OnMyTakeDamageWithFlying(origin, 1000, hits[i]);
 			}
 		}
 		this->Destroy();
